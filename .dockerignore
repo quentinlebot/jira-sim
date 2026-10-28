@@ -1,0 +1,9 @@
+# Build context of the simulator image (Dockerfile, compose.yaml): an allowlist.
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!src/**
+!scripts/check-boundaries.js
+!media/simulator.html
+**/*.map

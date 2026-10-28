@@ -1,0 +1,52 @@
+{
+  "name": "jira-sim",
+  "version": "0.1.0",
+  "description": "A local Jira simulator: the REST API v3 subset the DevFactory VS Code extension uses, with Jira's validation and errors, injectable faults, a request log, a dashboard, and its state in a file, MongoDB or PostgreSQL.",
+  "keywords": [
+    "jira",
+    "simulator",
+    "mock",
+    "testing",
+    "devfactory",
+    "vscode"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/quentinlebot/jira-sim.git"
+  },
+  "bugs": {
+    "url": "https://github.com/quentinlebot/jira-sim/issues"
+  },
+  "homepage": "https://github.com/quentinlebot/jira-sim#readme",
+  "main": "out/server.js",
+  "bin": {
+    "jira-sim": "out/cli.js"
+  },
+  "files": [
+    "out",
+    "media",
+    "README.md",
+    "!**/*.map"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
+    "check:boundaries": "node scripts/check-boundaries.js",
+    "compile": "npm run check:boundaries && tsc -p tsconfig.json",
+    "watch": "tsc -watch -p tsconfig.json",
+    "start": "npm run compile && node out/cli.js --state .simulator/jira-state.json",
+    "prepack": "npm run clean && npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.23.1",
+    "typescript": "^5.4.0"
+  },
+  "optionalDependencies": {
+    "mongodb": "^7.7.0",
+    "pg": "^8.23.1"
+  }
+}

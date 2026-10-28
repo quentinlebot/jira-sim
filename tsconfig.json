@@ -1,0 +1,14 @@
+{
+  // One build: everything under src/, rootDir src → out/, so out/cli.js is the npm bin.
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "outDir": "out",
+    "rootDir": "src",
+    "strict": true,
+    "sourceMap": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}

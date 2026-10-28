@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jira simulator</title>
+<style>
+:root {
+  --bg: #f4f5f7; --panel: #ffffff; --raised: #ffffff; --line: #dcdfe4; --line-strong: #c1c7d0; --text: #172b4d; --muted: #626f86; --faint: #8590a2;
+  --accent: #0c66e4; --accent-fg: #ffffff; --accent-soft: #e9f2ff; --chip: #f1f2f4;
+  --st-new: #8590a2; --st-indet: #1d7afc; --st-hold: #d97008; --st-done: #22a06b;
+  --ok: #216e4e; --ok-bg: #dcfff1; --warn: #a54800; --warn-bg: #fff3eb; --err: #ae2e24; --err-bg: #ffeceb;
+  --epic: #6e5dc6; --task: #1d7afc; --bug: #c9372c; --story: #22a06b;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --shadow: 0 1px 1px rgba(9, 30, 66, .13), 0 0 1px rgba(9, 30, 66, .2); --shadow-lg: 0 8px 24px rgba(9, 30, 66, .18);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161a1d; --panel: #1d2125; --raised: #22272b; --line: #343b42; --line-strong: #454f59; --text: #dee4ea; --muted: #9fadbc; --faint: #738496;
+    --accent: #579dff; --accent-fg: #161a1d; --accent-soft: #1c2b41; --chip: #2c333a;
+    --st-new: #8c9bab; --st-indet: #579dff; --st-hold: #fea362; --st-done: #4bce97;
+    --ok: #7ee2b8; --ok-bg: #1c3329; --warn: #fec195; --warn-bg: #3a2c1f; --err: #fd9891; --err-bg: #42221f;
+    --epic: #9f8fef; --task: #579dff; --bug: #f87168; --story: #4bce97;
+    --shadow: 0 1px 1px rgba(0, 0, 0, .5), 0 0 1px rgba(0, 0, 0, .5); --shadow-lg: 0 8px 24px rgba(0, 0, 0, .55);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); text-decoration: none; cursor: pointer; }
+a:hover { text-decoration: underline; }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.small { font-size: 12.5px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1 1 auto; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+#app { display: flex; flex-direction: column; height: 100%; }
+header.top { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.logo { width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.live { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--st-done); }
+.dot.off { background: var(--err); }
+nav.tabs { display: flex; gap: 2px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav.tabs button { border: 0; background: none; padding: 10px 12px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+nav.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--chip); color: var(--muted); font-size: 11.5px; text-align: center; }
+.count.err { background: var(--err-bg); color: var(--err); }
+main { flex: 1 1 auto; overflow: auto; padding: 16px; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--raised); cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.btn.danger { color: var(--err); border-color: var(--err); }
+.btn.danger.armed { background: var(--err); color: var(--panel); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.sm { min-height: 24px; padding: 0 8px; font-size: 12.5px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+input[type=text], input[type=number], input:not([type]), select, textarea { border: 1px solid var(--line-strong); border-radius: 4px; background: var(--raised); padding: 5px 8px; min-height: 30px; }
+textarea { width: 100%; resize: vertical; }
+input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+label.check { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; padding: 4px 10px; background: var(--raised); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line-strong); }
+.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 3px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; background: var(--chip); color: var(--muted); white-space: nowrap; }
+.pill.new { background: color-mix(in srgb, var(--st-new) 18%, transparent); color: var(--text); }
+.pill.indeterminate { background: color-mix(in srgb, var(--st-indet) 18%, transparent); color: var(--st-indet); }
+.pill.hold { background: color-mix(in srgb, var(--st-hold) 20%, transparent); color: var(--st-hold); }
+.pill.done { background: color-mix(in srgb, var(--st-done) 20%, transparent); color: var(--st-done); }
+.chip { display: inline-block; padding: 0 6px; border-radius: 3px; background: var(--chip); font-size: 11.5px; color: var(--muted); }
+.type { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; color: #fff; font-size: 10px; font-weight: 700; flex: none; }
+.type.Epic { background: var(--epic); } .type.Task { background: var(--task); } .type.Bug { background: var(--bug); } .type.Story { background: var(--story); } .type.Sub-task { background: var(--task); }
+.avatar { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 10.5px; font-weight: 700; color: #fff; flex: none; }
+.avatar.none { background: var(--chip); color: var(--faint); border: 1px dashed var(--line-strong); }
+
+.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(190px, 1fr); gap: 10px; overflow-x: auto; padding-bottom: 8px; align-items: start; }
+.column { background: color-mix(in srgb, var(--chip) 70%, transparent); border-radius: 6px; padding: 8px; min-height: 120px; }
+.column h3 { margin: 2px 4px 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.column h3 .bar { width: 10px; height: 10px; border-radius: 2px; }
+.cards { display: flex; flex-direction: column; gap: 6px; }
+.card { background: var(--raised); border-radius: 4px; box-shadow: var(--shadow); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; border: 1px solid transparent; }
+.card:hover { border-color: var(--accent); }
+.card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.card .sum { font-size: 13.5px; }
+.card .foot { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.card .foot .key { font-family: var(--mono); font-size: 11.5px; }
+.blocked { color: var(--err); font-size: 12px; }
+.empty { color: var(--faint); font-size: 12.5px; padding: 6px 4px; }
+.progress { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--st-done); }
+
+table.log { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+table.log th, table.log td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.log th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--panel); position: sticky; top: 0; }
+table.log tr.entry { cursor: pointer; }
+table.log tr.entry:hover td { background: var(--accent-soft); }
+table.log tr.bad td { background: color-mix(in srgb, var(--err-bg) 60%, transparent); }
+table.log td.path { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+.m { font-family: var(--mono); font-size: 11.5px; font-weight: 700; padding: 1px 6px; border-radius: 3px; background: var(--chip); }
+.m.POST { color: var(--st-indet); } .m.PUT { color: var(--st-hold); } .m.DELETE { color: var(--err); }
+.st { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.st.s2 { color: var(--ok); } .st.s4 { color: var(--warn); } .st.s5, .st.s0 { color: var(--err); }
+.bodies { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+pre.json { margin: 0; padding: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; font-family: var(--mono); font-size: 12px; max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.box h2 { margin: 0; font-size: 15px; }
+.box h3 { margin: 0; font-size: 13.5px; }
+section.block { margin-bottom: 22px; }
+section.block > h2 { font-size: 15px; margin: 0 0 10px; }
+.fault { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--err); border-radius: 4px; background: var(--panel); }
+.flow { border-collapse: collapse; font-size: 13px; }
+.flow td { padding: 3px 10px 3px 0; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+
+#drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; z-index: 10; }
+#drawer .head { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+#drawer .body { flex: 1 1 auto; overflow: auto; padding: 14px 16px 40px; display: flex; flex-direction: column; gap: 18px; }
+#drawer h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.meta { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 10px; align-items: center; font-size: 13.5px; }
+.meta > span:nth-child(odd) { color: var(--muted); }
+.desc h5 { margin: 8px 0 2px; font-size: 13.5px; }
+.desc p { margin: 2px 0; }
+.desc ul { margin: 2px 0; padding-left: 18px; }
+.item { border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; background: var(--raised); }
+.item .by { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.list { display: flex; flex-direction: column; gap: 6px; }
+.tr-form { border: 1px solid var(--accent); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--accent-soft); }
+.history { font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+
+.modal-back { position: fixed; inset: 0; background: rgba(9, 30, 66, .45); display: grid; place-items: center; z-index: 20; padding: 16px; }
+.modal { background: var(--panel); border-radius: 8px; box-shadow: var(--shadow-lg); width: min(560px, 100%); padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.modal h2 { margin: 0; font-size: 17px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+
+#toast { position: fixed; left: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 30; max-width: min(520px, calc(100vw - 32px)); }
+#toast div { background: var(--text); color: var(--panel); padding: 10px 14px; border-radius: 6px; box-shadow: var(--shadow-lg); font-size: 13.5px; }
+#toast div.err { background: var(--err); color: #fff; }
+@media (max-width: 640px) { main { padding: 12px 16px; } .meta { grid-template-columns: 90px minmax(0, 1fr); } }
+#drawer { overflow-x: hidden; }
+#drawer .row > *, .meta > span { min-width: 0; overflow-wrap: anywhere; }
+select, input[type=text] { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+.errline { color: var(--err); font: 12.5px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin-top: 2px; }
+.flow { align-self: flex-start; }
+</style>
+</head>
+<body>
+<div id="app"><main><p class="muted">Loading the simulator…</p></main></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = { get: (k) => { try { return localStorage.getItem('jira-sim.' + k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem('jira-sim.' + k, v); } catch { /* private mode */ } } };
+
+const S = {
+  data: null, live: false, tab: store.get('tab') || 'board', open: null, as: store.get('as') || 'sim-sam',
+  board: { type: 'all', epic: '', q: '', done: true },
+  log: { q: '', writes: false, errors: false, open: new Set(), bodies: {} },
+  pending: null, armed: null, modal: null, editDesc: false
+};
+const dirty = new Map();
+document.addEventListener('input', (e) => { if (e.target.id) { dirty.set(e.target.id, e.target.value); } });
+
+// ---- data ----
+
+async function api(method, path, body) {
+  const r = await fetch('/_sim/api' + path, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify({ as: S.as, ...body }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { toast(j.error || `HTTP ${r.status}`, true); throw new Error(j.error); }
+  return j;
+}
+async function load() {
+  const r = await fetch('/_sim/api/state');
+  S.data = await r.json();
+  render();
+}
+let loadTimer;
+const loadSoon = () => { clearTimeout(loadTimer); loadTimer = setTimeout(load, 60); };
+function connect() {
+  const es = new EventSource('/_sim/events');
+  es.onopen = () => { S.live = true; load(); };
+  es.onmessage = loadSoon;
+  es.onerror = () => { S.live = false; renderHeaderOnly(); };
+}
+
+// ---- helpers ----
+
+const issue = (key) => S.data.issues.find((i) => i.key === key);
+const user = (id) => S.data.users.find((u) => u.accountId === id);
+const userName = (id) => (id ? user(id)?.displayName ?? id : 'Unassigned');
+const PALETTE = ['#6e5dc6', '#1d7afc', '#22a06b', '#d97008', '#c9372c', '#0b8a8f'];
+function avatar(id) {
+  if (!id) { return '<span class="avatar none" title="Unassigned">?</span>'; }
+  const name = userName(id);
+  const n = [...id].reduce((s, c) => s + c.charCodeAt(0), 0);
+  const initials = name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  return `<span class="avatar" style="background:${PALETTE[n % PALETTE.length]}" title="${esc(name)}">${esc(initials)}</span>`;
+}
+const cat = (i) => (i.status === 'On Hold' ? 'hold' : i.category);
+const pill = (i) => `<span class="pill ${cat(i)}">${esc(i.status)}</span>`;
+const typeIcon = (t) => `<span class="type ${esc(t)}" title="${esc(t)}">${esc(t[0])}</span>`;
+function ago(iso) {
+  if (!iso) { return ''; }
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  const t = s < 45 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`;
+  return `<span title="${esc(new Date(iso).toLocaleString())}">${t}</span>`;
+}
+function descHtml(text) {
+  if (!text || !text.trim()) { return '<span class="faint">No description.</span>'; }
+  let out = '';
+  let inList = false;
+  for (const line of text.split('\n')) {
+    const li = /^- (.*)/.exec(line);
+    if (li && !inList) { out += '<ul>'; inList = true; }
+    if (!li && inList) { out += '</ul>'; inList = false; }
+    if (li) { out += `<li>${esc(li[1])}</li>`; } else if (line.startsWith('## ')) { out += `<h5>${esc(line.slice(3))}</h5>`; } else if (line.trim()) { out += `<p>${esc(line)}</p>`; }
+  }
+  return out + (inList ? '</ul>' : '');
+}
+function blockersOf(key) {
+  return S.data.links.filter((l) => l.type === 'Blocks' && l.inward === key).map((l) => ({ link: l, issue: issue(l.outward) })).filter((x) => x.issue);
+}
+function toast(text, err) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  if (err) { d.className = 'err'; }
+  $('#toast').append(d);
+  setTimeout(() => d.remove(), err ? 7000 : 3000);
+}
+const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+const consume = (...ids) => ids.forEach((id) => dirty.delete(id));
+
+// ---- render ----
+
+function render() {
+  if (!S.data) { return; }
+  const a = document.activeElement;
+  const focus = a && a.id ? { id: a.id, s: a.selectionStart, e: a.selectionEnd } : null;
+  const scroll = { main: $('main')?.scrollTop, drawer: $('#drawer .body')?.scrollTop, board: $('.board')?.scrollLeft };
+  $('#app').innerHTML = header() + tabs() + `<main>${S.tab === 'requests' ? requests() : S.tab === 'faults' ? faults() : S.tab === 'settings' ? settings() : board()}</main>` + drawer() + modal();
+  for (const [id, v] of dirty) { const el = document.getElementById(id); if (el && el.value !== v) { el.value = v; } }
+  if (focus) {
+    const el = document.getElementById(focus.id);
+    if (el) { el.focus(); try { el.setSelectionRange(focus.s, focus.e); } catch { /* not a text field */ } }
+  }
+  if ($('main')) { $('main').scrollTop = scroll.main ?? 0; }
+  if ($('#drawer .body')) { $('#drawer .body').scrollTop = scroll.drawer ?? 0; }
+  if ($('.board')) { $('.board').scrollLeft = scroll.board ?? 0; }
+}
+function renderHeaderOnly() {
+  const h = $('header.top');
+  if (h && S.data) { h.outerHTML = header(); }
+}
+
+function header() {
+  const d = S.data;
+  const me = user(d.me);
+  return `<header class="top">
+    <div class="brand"><span class="logo" aria-hidden="true">J</span><span>Jira simulator</span><span class="chip">project ${esc(d.project.key)}</span></div>
+    <span class="live" title="${S.live ? 'Live: changes show as they happen' : 'Disconnected: reconnecting'}"><span class="dot ${S.live ? '' : 'off'}"></span>${S.live ? 'live' : 'reconnecting…'}</span>
+    <code class="muted" title="Base URL of the simulated Jira">${esc(d.url)}</code>
+    <span class="grow"></span>
+    <span class="muted small">API calls sign in as <strong>${esc(me?.displayName)}</strong></span>
+    <label class="row small"><span class="muted">Dashboard acts as</span>
+      <select id="as" data-change="as" aria-label="User the dashboard acts as">${d.users.map((u) => `<option value="${esc(u.accountId)}" ${u.accountId === S.as ? 'selected' : ''}>${esc(u.displayName)}${u.accountId === d.me ? ' (you)' : ''}</option>`).join('')}</select></label>
+    <button class="btn primary" data-do="newIssue">New issue</button>
+  </header>`;
+}
+
+function tabs() {
+  const errs = S.data.log.filter((l) => l.status >= 400 || l.status === 0).length;
+  const t = (id, label, extra = '') => `<button class="${S.tab === id ? 'on' : ''}" data-do="tab" data-tab="${id}">${label}${extra}</button>`;
+  return `<nav class="tabs" aria-label="Sections">
+    ${t('board', 'Board', `<span class="count">${S.data.issues.length}</span>`)}
+    ${t('requests', 'Requests', `<span class="count">${S.data.log.length}</span>${errs ? `<span class="count err">${errs} failed</span>` : ''}`)}
+    ${t('faults', 'Faults', S.data.faults.length ? `<span class="count err">${S.data.faults.length} active</span>` : '')}
+    ${t('settings', 'Workflow & settings')}
+  </nav>`;
+}
+
+function board() {
+  const b = S.board;
+  const epics = S.data.issues.filter((i) => i.type === 'Epic');
+  const q = b.q.trim().toLowerCase();
+  const shown = S.data.issues.filter((i) =>
+    (b.type === 'all' || (b.type === 'epics' ? i.type === 'Epic' : i.type !== 'Epic')) &&
+    (!b.epic || i.key === b.epic || i.parent === b.epic) &&
+    (b.done || i.category !== 'done') &&
+    (!q || i.key.toLowerCase().includes(q) || i.summary.toLowerCase().includes(q) || i.labels.some((l) => l.toLowerCase().includes(q))));
+  const seg = (v, label) => `<button class="${b.type === v ? 'on' : ''}" data-do="boardType" data-v="${v}">${label}</button>`;
+  const cols = S.data.statuses.filter((s) => b.done || s.category !== 'done').map((s) => {
+    const items = shown.filter((i) => i.status === s.name).sort((x, y) => (x.type === 'Epic') - (y.type === 'Epic') || Number(x.key.split('-')[1]) - Number(y.key.split('-')[1]));
+    const color = s.name === 'On Hold' ? 'var(--st-hold)' : s.category === 'done' ? 'var(--st-done)' : s.category === 'indeterminate' ? 'var(--st-indet)' : 'var(--st-new)';
+    return `<div class="column" aria-label="${esc(s.name)}"><h3><span class="bar" style="background:${color}"></span>${esc(s.name)}<span class="count">${items.length}</span></h3>
+      <div class="cards">${items.map(card).join('') || '<div class="empty">Nothing here.</div>'}</div></div>`;
+  }).join('');
+  return `<div class="toolbar">
+      <div class="seg" role="group" aria-label="Issue types">${seg('all', 'All')}${seg('epics', 'Epics')}${seg('tasks', 'Tasks')}</div>
+      <select id="epicFilter" data-change="epicFilter" aria-label="Epic"><option value="">All epics</option>${epics.map((e) => `<option value="${esc(e.key)}" ${b.epic === e.key ? 'selected' : ''}>${esc(e.key)} · ${esc(e.summary.slice(0, 60))}</option>`).join('')}</select>
+      <input id="boardQ" type="text" placeholder="Search key, summary, label" value="${esc(b.q)}" data-input="boardQ" aria-label="Search">
+      <label class="check"><input type="checkbox" data-change="boardDone" ${b.done ? 'checked' : ''}> Show Done</label>
+      <span class="grow"></span>
+      <span class="muted small">${shown.length} of ${S.data.issues.length} issues · changes made here show in VS Code after Refresh, like edits by a teammate in Jira</span>
+    </div>
+    <div class="board">${cols}</div>`;
+}
+
+function card(i) {
+  const children = S.data.issues.filter((c) => c.parent === i.key);
+  const done = children.filter((c) => c.category === 'done').length;
+  const blockers = blockersOf(i.key).filter((x) => x.issue.category !== 'done');
+  return `<div class="card ${S.open === i.key ? 'sel' : ''}" data-do="open" data-key="${esc(i.key)}" tabindex="0" role="button" aria-label="${esc(i.key)} ${esc(i.summary)}">
+    <div class="sum">${esc(i.summary)}</div>
+    ${i.labels.length ? `<div class="row" style="gap:4px">${i.labels.map((l) => `<span class="chip">${esc(l)}</span>`).join('')}</div>` : ''}
+    ${i.type === 'Epic' && children.length ? `<div class="progress" title="${done} of ${children.length} tasks done"><span style="width:${Math.round(done / children.length * 100)}%"></span></div>` : ''}
+    ${blockers.length ? `<div class="blocked">⛔ blocked by ${blockers.map((x) => esc(x.issue.key)).join(', ')}</div>` : ''}
+    <div class="foot">${typeIcon(i.type)}<span class="key">${esc(i.key)}</span>${i.parent ? `<span>· ${esc(i.parent)}</span>` : ''}${i.type === 'Epic' && children.length ? `<span>· ${done}/${children.length}</span>` : ''}${i.comments.length ? `<span title="Comments">· 💬 ${i.comments.length}</span>` : ''}${i.worklogs.length ? `<span title="Time logged">· ⏱ ${esc(spent(i))}</span>` : ''}${i.resolution ? `<span>· ${esc(i.resolution)}</span>` : ''}<span class="grow"></span>${avatar(i.assignee)}</div>
+  </div>`;
+}
+function spent(i) {
+  const s = i.worklogs.reduce((n, w) => n + w.timeSpentSeconds, 0);
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return [h && `${h}h`, m && `${m}m`].filter(Boolean).join(' ') || '0m';
+}
+
+function requests() {
+  const L = S.log;
+  const q = L.q.trim().toLowerCase();
+  const rows = S.data.log.slice().reverse().filter((e) =>
+    (!L.writes || e.method !== 'GET') && (!L.errors || e.status >= 400 || e.status === 0) &&
+    (!q || `${e.method} ${e.path} ${e.status} ${e.error ?? ''}`.toLowerCase().includes(q)));
+  const body = rows.map((e) => {
+    const open = L.open.has(e.id);
+    const b = L.bodies[e.id];
+    const status = e.status === 0 ? 'dropped' : e.status;
+    return `<tr class="entry ${e.status >= 400 || e.status === 0 ? 'bad' : ''}" data-do="logRow" data-id="${e.id}" aria-expanded="${open}">
+        <td class="small muted">${esc(new Date(e.at).toLocaleTimeString())}</td>
+        <td><span class="m ${esc(e.method)}">${esc(e.method)}</span></td>
+        <td class="path">${esc(e.path)}${e.error ? `<div class="errline">${esc(e.error)}</div>` : ''}</td>
+        <td><span class="st s${String(e.status)[0]}">${esc(status)}</span></td>
+        <td class="small muted">${e.ms} ms</td>
+        <td>${e.fault ? `<span class="chip" style="color:var(--err)">fault: ${esc(e.fault)}</span>` : ''}</td>
+      </tr>${open ? `<tr><td colspan="6"><div class="bodies">
+        <div><h4 class="muted small" style="margin:0 0 4px">Request${e.user ? ` · as ${esc(e.user)}` : ''}</h4><pre class="json">${b ? esc(b.request === undefined ? '(no body)' : JSON.stringify(b.request, null, 2)) : 'Loading…'}</pre></div>
+        <div><h4 class="muted small" style="margin:0 0 4px">Response · ${esc(status)}</h4><pre class="json">${b ? esc(b.response === undefined ? '(no body)' : JSON.stringify(b.response, null, 2)) : 'Loading…'}</pre></div>
+      </div></td></tr>` : ''}`;
+  }).join('');
+  return `<div class="toolbar">
+      <input id="logQ" type="text" placeholder="Filter path, status, error" value="${esc(L.q)}" data-input="logQ" aria-label="Filter requests">
+      <label class="check"><input type="checkbox" data-change="logWrites" ${L.writes ? 'checked' : ''}> Writes only</label>
+      <label class="check"><input type="checkbox" data-change="logErrors" ${L.errors ? 'checked' : ''}> Failed only</label>
+      <span class="grow"></span>
+      <span class="muted small">Every REST call made to ${esc(S.data.url)}, newest first; click one for its bodies.</span>
+      <button class="btn sm" data-do="clearLog">Clear</button>
+    </div>
+    ${rows.length ? `<table class="log"><thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>Took</th><th></th></tr></thead><tbody>${body}</tbody></table>`
+      : `<div class="box"><span class="muted">No requests${S.data.log.length ? ' match the filter' : ' yet. Point VS Code at the simulator (devfactory.dataSource "simulator") and press Refresh.'}</span></div>`}`;
+}
+
+function faults() {
+  const d = S.data;
+  const presets = Object.entries(d.presets).map(([id, p]) => `<div class="box">
+      <h3>${esc(p.label)}</h3>
+      <div class="small muted"><span class="m ${esc(p.method)}">${esc(p.method === '*' ? 'ANY' : p.method)}</span> <code>${esc(p.path)}</code> → ${p.kind === 'error' ? `<strong>${p.status}</strong> ${esc(p.message)}` : p.kind === 'drop' ? 'connection dropped' : `+${p.delayMs} ms`}</div>
+      <div class="small faint">${p.remaining === -1 ? 'Until removed' : `Next ${p.remaining} request${p.remaining > 1 ? 's' : ''}`}</div>
+      <div><button class="btn sm" data-do="preset" data-id="${esc(id)}">Inject</button></div>
+    </div>`).join('');
+  const active = d.faults.map((f) => `<div class="fault">
+      <strong>${esc(f.label)}</strong>
+      <span class="small muted"><span class="m ${esc(f.method)}">${esc(f.method === '*' ? 'ANY' : f.method)}</span> <code>${esc(f.path)}</code> → ${f.kind === 'error' ? `${f.status} ${esc(f.message)}` : f.kind === 'drop' ? 'drop' : `+${f.delayMs} ms`}</span>
+      <span class="grow"></span>
+      <span class="small muted">${f.remaining === -1 ? 'until removed' : `${f.remaining} left`} · hit ${f.hits}×</span>
+      <button class="btn sm" data-do="unfault" data-id="${esc(f.id)}">Remove</button>
+    </div>`).join('');
+  return `<section class="block"><div class="row" style="margin-bottom:10px"><h2 style="margin:0;font-size:15px">Active faults</h2><span class="grow"></span>${d.faults.length ? '<button class="btn sm" data-do="clearFaults">Remove all</button>' : ''}</div>
+      ${active || '<div class="box"><span class="muted">None: every request is answered normally.</span></div>'}</section>
+    <section class="block"><h2>Inject a fault</h2><div class="cards-grid">${presets}</div></section>
+    <section class="block"><h2>Custom fault</h2><div class="box">
+      <div class="row">
+        <select id="fMethod" aria-label="Method">${['*', 'GET', 'POST', 'PUT', 'DELETE'].map((m) => `<option value="${m}">${m === '*' ? 'Any method' : m}</option>`).join('')}</select>
+        <input id="fPath" type="text" placeholder="path contains, e.g. /transitions" style="flex:1 1 220px" aria-label="Path contains">
+        <select id="fKind" aria-label="Kind"><option value="error">Error answer</option><option value="drop">Drop the connection</option><option value="delay">Delay</option></select>
+        <input id="fStatus" type="number" value="500" style="width:90px" aria-label="HTTP status">
+        <input id="fDelay" type="number" value="2000" style="width:100px" aria-label="Delay in ms" title="Delay in ms (Delay kind)">
+        <select id="fTimes" aria-label="How many requests"><option value="1">Next request</option><option value="3">Next 3</option><option value="-1">Until removed</option></select>
+      </div>
+      <input id="fMessage" type="text" placeholder="Error message, as Jira would word it" aria-label="Error message">
+      <div><button class="btn" data-do="customFault">Add fault</button></div>
+    </div></section>`;
+}
+
+function settings() {
+  const st = S.data.settings;
+  const flow = (title, rows) => `<div class="box"><h3>${title}</h3><table class="flow">${rows.map(([from, name, to]) => `<tr><td>${esc(from)}</td><td class="muted">— ${esc(name)} →</td><td>${esc(to)}</td></tr>`).join('')}</table></div>`;
+  const check = (k, label, help) => `<label class="check" style="align-items:flex-start"><input type="checkbox" data-setting="${k}" ${st[k] ? 'checked' : ''} style="margin-top:3px"><span>${label}<br><span class="small muted">${help}</span></span></label>`;
+  return `<div class="grid2">
+    <div class="box"><h2>Workflow</h2>
+      <label class="check"><input type="radio" name="wf" data-setting="workflow" value="conventions" ${st.workflow === 'conventions' ? 'checked' : ''}><span>Conventions <span class="muted small">(jira-workflow-conventions.md)</span></span></label>
+      <label class="check"><input type="radio" name="wf" data-setting="workflow" value="free" ${st.workflow === 'free' ? 'checked' : ''}> Free: any status to any status</label>
+      <span class="small muted">The conventions only allow the arrows of the state diagrams; a client that skips a state gets "no transition".</span>
+    </div>
+    <div class="box"><h2>Validators</h2>
+      ${check('resolutionRequired', 'Resolution required on Done', 'The conventions: Jira blocks Done until a resolution is chosen.')}
+      ${check('worklogRequired', 'Time spent required on task Done', 'A task needs a worklog before Done (or one in the transition).')}
+      ${check('reviewNeedsTasksDone', 'Epic review needs all tasks Done', 'Refuses In Review while a child task is open.')}
+      ${check('epicNameRequired', 'Epics need an Epic Name (customfield_10011)', 'Like a classic project: test devfactory.jira.epicExtraFields.')}
+    </div>
+    <div class="box"><h2>Behaviour</h2>
+      <label class="row"><span style="width:170px">Latency per call</span><input type="number" min="0" step="50" data-setting="latencyMs" value="${st.latencyMs}" style="width:100px"> ms</label>
+      <label class="row"><span style="width:170px">Search page size</span><input type="number" min="1" data-setting="pageSize" value="${st.pageSize}" style="width:100px"> <span class="small muted">set 2 to exercise paging</span></label>
+      <label class="row"><span style="width:170px">New issues are assigned to</span><select data-setting="newIssueAssignee"><option value="unassigned" ${st.newIssueAssignee === 'unassigned' ? 'selected' : ''}>nobody (Jira default)</option><option value="reporter" ${st.newIssueAssignee === 'reporter' ? 'selected' : ''}>their reporter</option></select></label>
+    </div>
+    <div class="box"><h2>Data</h2>
+      <span class="small muted">${S.data.storage?.kind === 'file' ? `Kept in <code>${esc(S.data.storage.location)}</code> between runs.` : S.data.storage?.kind ? `Kept in ${esc(S.data.storage.kind === 'mongodb' ? 'MongoDB' : 'PostgreSQL')} <code>${esc(S.data.storage.location)}</code>, one table per entity.` : 'In memory: lost when the simulator stops.'}</span>
+      <div class="row">
+        <button class="btn danger ${S.armed === 'reset:empty' ? 'armed' : ''}" data-do="reset" data-seed="empty">${S.armed === 'reset:empty' ? 'Click again to empty' : 'Empty project'}</button>
+      </div>
+      <div class="row"><a class="btn" href="/_sim/api/export" download="jira-simulator-state.json">Export state</a>
+        <label class="btn">Import state<input type="file" accept="application/json" data-change="import" class="sr"></label></div>
+    </div>
+  </div>
+  <section class="block" style="margin-top:18px"><h2>Transitions</h2><div class="grid2">
+    ${st.workflow === 'free' ? '<div class="box"><span class="muted">Free workflow: every status has a transition to every other status, named after it.</span></div>' : flow('Epic', [['Open', 'Accept', 'Accepted'], ['Accepted', 'Mark ready', 'Ready'], ['Ready', 'Start', 'In Progress'], ['In Progress', 'Ask review', 'In Review'], ['In Review', 'Close', 'Done'], ['In Progress', 'Put on hold', 'On Hold'], ['On Hold', 'Resume', 'In Progress']]) + flow('Task', [['Open', 'Accept', 'Accepted'], ['Accepted', 'Mark ready', 'Ready'], ['Ready', 'Start', 'In Progress'], ['In Progress', 'Done', 'Done'], ['In Progress', 'Put on hold', 'On Hold'], ['On Hold', 'Resume', 'In Progress'], ['Open', "Won't Do", 'Done']])}
+  </div></section>
+  <section class="block"><h2>Connect</h2><div class="box small">
+    <div>VS Code: set <code>devfactory.dataSource</code> to <code>simulator</code>: the extension starts or finds this simulator on port <code>devfactory.simulator.port</code>.</div>
+    <div>To exercise the real Jira path (email, token, base URL): <code>dataSource</code> <code>jira</code>, <code>devfactory.baseUrl</code> <code>${esc(S.data.url)}</code>, any email and token.</div>
+    <div>Every API call signs in as the simulated you, named after the email it sends. The dashboard acts as the user chosen at the top, so its changes look like a teammate's.</div>
+  </div></section>`;
+}
+
+function drawer() {
+  const i = S.open && issue(S.open);
+  if (!i) { return ''; }
+  const children = S.data.issues.filter((c) => c.parent === i.key);
+  const blockers = blockersOf(i.key);
+  const blocks = S.data.links.filter((l) => l.type === 'Blocks' && l.outward === i.key).map((l) => ({ link: l, issue: issue(l.inward) })).filter((x) => x.issue);
+  const p = S.pending && S.pending.key === i.key ? i.transitions.find((t) => t.id === S.pending.id) : null;
+  const parent = i.parent && issue(i.parent);
+  const candidates = S.data.issues.filter((x) => x.key !== i.key && x.type !== 'Epic' && !blockers.some((b) => b.issue.key === x.key));
+  return `<aside id="drawer" aria-label="Issue ${esc(i.key)}">
+    <div class="head">
+      <div class="row">${typeIcon(i.type)}<a class="mono" data-do="open" data-key="${esc(i.key)}">${esc(i.key)}</a>${pill(i)}${i.resolution ? `<span class="chip">${esc(i.resolution)}</span>` : ''}<span class="grow"></span><button class="btn ghost sm" data-do="close" aria-label="Close">✕</button></div>
+      <div class="row" style="flex-wrap:nowrap"><input id="sum-${esc(i.key)}" type="text" value="${esc(i.summary)}" style="flex:1 1 auto;font-weight:600" aria-label="Summary"><button class="btn sm" data-do="saveSummary">Save</button></div>
+      <div class="row">${i.transitions.length ? i.transitions.map((t) => `<button class="btn sm ${p && p.id === t.id ? 'primary' : ''}" data-do="transition" data-id="${esc(t.id)}" title="→ ${esc(t.to)}">${esc(t.name)}</button>`).join('') : '<span class="small muted">No transition from this status.</span>'}</div>
+      ${p ? `<div class="tr-form"><strong>${esc(p.name)} → ${esc(p.to)}</strong>
+        <div class="row"><label class="field" style="flex:1 1 160px"><span>Resolution</span><select id="tr-res"><option value="">(none)</option>${S.data.resolutions.map((r) => `<option ${r === 'Done' ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>
+          ${i.type !== 'Epic' ? '<label class="field" style="flex:1 1 120px"><span>Time spent</span><input id="tr-time" type="text" placeholder="1h 30m"></label>' : ''}</div>
+        <label class="field"><span>Comment</span><textarea id="tr-comment" rows="2"></textarea></label>
+        <div class="row"><button class="btn primary sm" data-do="confirmTransition">${esc(p.name)}</button><button class="btn sm" data-do="cancelTransition">Cancel</button></div></div>` : ''}
+    </div>
+    <div class="body">
+      <div class="meta">
+        <span>Type</span><span>${esc(i.type)}</span>
+        <span>Parent</span><span>${parent ? `<a data-do="open" data-key="${esc(parent.key)}">${esc(parent.key)}</a> <span class="muted small">${esc(parent.summary)}</span>` : '<span class="faint">None</span>'}</span>
+        <span>Assignee</span><span><select data-change="assign" aria-label="Assignee"><option value="">Unassigned</option>${S.data.users.map((u) => `<option value="${esc(u.accountId)}" ${u.accountId === i.assignee ? 'selected' : ''}>${esc(u.displayName)}</option>`).join('')}</select></span>
+        <span>Reporter</span><span>${esc(userName(i.reporter))}</span>
+        <span>Labels</span><span class="row" style="flex-wrap:nowrap"><input id="lab-${esc(i.key)}" type="text" value="${esc(i.labels.join(' '))}" style="flex:1 1 auto" aria-label="Labels, separated by spaces"><button class="btn sm" data-do="saveLabels">Save</button></span>
+        <span>Created</span><span>${ago(i.created)}</span>
+        <span>Updated</span><span>${ago(i.updated)}</span>
+        <span>Time logged</span><span>${i.worklogs.length ? esc(spent(i)) : '<span class="faint">None</span>'}</span>
+        ${Object.keys(i.custom || {}).length ? `<span>Custom</span><span class="mono small">${esc(JSON.stringify(i.custom))}</span>` : ''}
+      </div>
+      <div><div class="row"><h4 style="margin:0">Description</h4><span class="grow"></span><button class="btn ghost sm" data-do="editDesc">${S.editDesc ? 'Cancel' : 'Edit'}</button></div>
+        ${S.editDesc ? `<textarea id="desc-${esc(i.key)}" rows="8" class="mono">${esc(i.descriptionText || '')}</textarea><div style="margin-top:6px"><button class="btn sm primary" data-do="saveDesc">Save description</button> <span class="small muted">"## " headings and "- " bullets, like the extension writes them</span></div>` : `<div class="desc">${descHtml(i.descriptionText)}</div>`}</div>
+      ${i.type === 'Epic' ? `<div><h4>Tasks · ${children.filter((c) => c.category === 'done').length}/${children.length} done</h4><div class="list">${children.map((c) => `<div class="row item" style="padding:6px 10px">${typeIcon(c.type)}<a class="mono" data-do="open" data-key="${esc(c.key)}">${esc(c.key)}</a><span class="grow">${esc(c.summary)}</span>${pill(c)}</div>`).join('') || '<span class="faint small">No tasks.</span>'}</div></div>` : ''}
+      <div><h4>Links</h4><div class="list">
+        ${blockers.map((x) => `<div class="row item" style="padding:6px 10px"><span class="muted">is blocked by</span><a class="mono" data-do="open" data-key="${esc(x.issue.key)}">${esc(x.issue.key)}</a><span class="grow small">${esc(x.issue.summary)}</span>${pill(x.issue)}<button class="btn ghost sm" data-do="unlink" data-id="${esc(x.link.id)}" aria-label="Remove link">✕</button></div>`).join('')}
+        ${blocks.map((x) => `<div class="row item" style="padding:6px 10px"><span class="muted">blocks</span><a class="mono" data-do="open" data-key="${esc(x.issue.key)}">${esc(x.issue.key)}</a><span class="grow small">${esc(x.issue.summary)}</span>${pill(x.issue)}<button class="btn ghost sm" data-do="unlink" data-id="${esc(x.link.id)}" aria-label="Remove link">✕</button></div>`).join('')}
+        ${!blockers.length && !blocks.length ? '<span class="faint small">No links.</span>' : ''}
+        ${i.type !== 'Epic' ? `<div class="row"><span class="small muted">Blocked by</span><select id="link-${esc(i.key)}" aria-label="Blocker"><option value="">Choose a task…</option>${candidates.map((c) => `<option value="${esc(c.key)}">${esc(c.key)} · ${esc(c.summary.slice(0, 50))}</option>`).join('')}</select><button class="btn sm" data-do="addLink">Link</button></div>` : ''}
+      </div></div>
+      <div><h4>Comments · ${i.comments.length}</h4><div class="list">
+        ${i.comments.map((c) => `<div class="item"><div class="by"><strong>${esc(userName(c.author))}</strong> · ${ago(c.created)}</div><div class="desc">${descHtml(c.text)}</div></div>`).join('')}
+        <textarea id="c-${esc(i.key)}" rows="2" placeholder="Comment as ${esc(userName(S.as))}"></textarea>
+        <div><button class="btn sm" data-do="comment">Comment</button></div>
+      </div></div>
+      ${i.type !== 'Epic' ? `<div><h4>Work log · ${i.worklogs.length ? esc(spent(i)) : 'none'}</h4><div class="list">
+        ${i.worklogs.map((w) => `<div class="small"><strong>${esc(w.timeSpent)}</strong> <span class="muted">by ${esc(userName(w.author))} · ${ago(w.created)}</span></div>`).join('')}
+        <div class="row"><input id="w-${esc(i.key)}" type="text" placeholder="1h 30m" style="width:120px" aria-label="Time spent"><button class="btn sm" data-do="worklog">Log time</button></div>
+      </div></div>` : ''}
+      <div><h4>History</h4><div class="history">${i.history.slice().reverse().map((h) => `<div>${ago(h.at)} · <strong>${esc(userName(h.author))}</strong> ${h.field === 'created' ? 'created the issue' : `changed ${esc(h.field)}${h.from ? ` from <em>${esc(h.from)}</em>` : ''}${h.to ? ` to <em>${esc(h.to)}</em>` : ''}`}</div>`).join('')}</div></div>
+      <div><button class="btn danger sm ${S.armed === 'del:' + i.key ? 'armed' : ''}" data-do="deleteIssue">${S.armed === 'del:' + i.key ? 'Click again to delete' : 'Delete issue'}</button></div>
+    </div>
+  </aside>`;
+}
+
+function modal() {
+  if (S.modal !== 'new') { return ''; }
+  const epics = S.data.issues.filter((i) => i.type === 'Epic' && i.category !== 'done');
+  const type = val('n-type') || 'Task';
+  return `<div class="modal-back" data-do="closeModal"><div class="modal" role="dialog" aria-modal="true" aria-label="New issue" data-stop>
+    <h2>New issue</h2>
+    <span class="small muted">Created as ${esc(userName(S.as))}, through the same validation as the API.</span>
+    <div class="row">
+      <label class="field" style="flex:1 1 140px"><span>Type</span><select id="n-type" data-change="rerender">${S.data.issueTypes.filter((t) => t.hierarchyLevel >= 0).map((t) => `<option ${t.name === type ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>
+      ${type !== 'Epic' ? `<label class="field" style="flex:2 1 220px"><span>Epic</span><select id="n-parent"><option value="">None</option>${epics.map((e) => `<option value="${esc(e.key)}">${esc(e.key)} · ${esc(e.summary.slice(0, 50))}</option>`).join('')}</select></label>` : ''}
+    </div>
+    <label class="field"><span>Summary</span><input id="n-summary" type="text" placeholder="${type === 'Epic' ? '[Update] [Core] Gateway - upgrade to 2.0' : '[Implementation] update the service'}"></label>
+    <div class="row">
+      <label class="field" style="flex:2 1 220px"><span>Labels</span><input id="n-labels" type="text" placeholder="space separated"></label>
+      <label class="field" style="flex:1 1 160px"><span>Assignee</span><select id="n-assignee"><option value="">Unassigned</option>${S.data.users.map((u) => `<option value="${esc(u.accountId)}">${esc(u.displayName)}</option>`).join('')}</select></label>
+    </div>
+    <label class="field"><span>Description</span><textarea id="n-desc" rows="4" placeholder="## Goal&#10;…"></textarea></label>
+    <div class="row"><button class="btn primary" data-do="createIssue">Create</button><button class="btn" data-do="closeModal" data-force>Cancel</button></div>
+  </div></div>`;
+}
+
+// ---- actions ----
+
+const run = async (fn) => { try { await fn(); } catch { /* the toast tells */ } };
+const A = {
+  tab: (el) => { S.tab = el.dataset.tab; store.set('tab', S.tab); render(); },
+  open: (el) => { S.open = el.dataset.key; S.pending = null; S.editDesc = false; history.replaceState(null, '', '#issue=' + S.open); render(); },
+  close: () => { S.open = null; S.pending = null; history.replaceState(null, '', location.pathname); render(); },
+  boardType: (el) => { S.board.type = el.dataset.v; render(); },
+  transition: (el) => run(async () => {
+    const i = issue(S.open);
+    const t = i.transitions.find((x) => x.id === el.dataset.id);
+    const toDone = S.data.statuses.find((s) => s.name === t.to)?.category === 'done';
+    if (toDone) { S.pending = { key: i.key, id: t.id }; render(); return; }
+    await api('POST', `/issue/${i.key}/transition`, { id: t.id });
+    toast(`${i.key}: ${t.name} → ${t.to}`);
+  }),
+  confirmTransition: () => run(async () => {
+    const { key, id } = S.pending;
+    await api('POST', `/issue/${key}/transition`, { id, resolution: val('tr-res') || undefined, timeSpent: val('tr-time') || undefined, comment: val('tr-comment') || undefined });
+    S.pending = null;
+    consume('tr-time', 'tr-comment');
+    toast(`${key} moved to Done`);
+  }),
+  cancelTransition: () => { S.pending = null; render(); },
+  saveSummary: () => run(async () => { await api('POST', `/issue/${S.open}/edit`, { summary: val('sum-' + S.open) }); consume('sum-' + S.open); toast('Summary saved'); }),
+  saveLabels: () => run(async () => { await api('POST', `/issue/${S.open}/edit`, { labels: val('lab-' + S.open).split(/[\s,]+/).filter(Boolean) }); consume('lab-' + S.open); toast('Labels saved'); }),
+  editDesc: () => { S.editDesc = !S.editDesc; consume('desc-' + S.open); render(); },
+  saveDesc: () => run(async () => { await api('POST', `/issue/${S.open}/edit`, { description: val('desc-' + S.open) }); consume('desc-' + S.open); S.editDesc = false; toast('Description saved'); }),
+  comment: () => run(async () => { const text = val('c-' + S.open); if (!text.trim()) { return; } await api('POST', `/issue/${S.open}/comment`, { text }); consume('c-' + S.open); }),
+  worklog: () => run(async () => { await api('POST', `/issue/${S.open}/worklog`, { timeSpent: val('w-' + S.open) }); consume('w-' + S.open); }),
+  addLink: () => run(async () => { const blocker = val('link-' + S.open); if (!blocker) { return; } await api('POST', '/link', { blocker, blocked: S.open }); consume('link-' + S.open); }),
+  unlink: (el) => run(() => api('DELETE', `/link/${el.dataset.id}`, {})),
+  deleteIssue: () => run(async () => {
+    if (S.armed !== 'del:' + S.open) { S.armed = 'del:' + S.open; render(); return; }
+    await api('DELETE', `/issue/${S.open}`, {});
+    toast(`${S.open} deleted`);
+    S.armed = null;
+    S.open = null;
+  }),
+  newIssue: () => { S.modal = 'new'; render(); $('#n-summary')?.focus(); },
+  closeModal: (el, e) => { if (el.hasAttribute('data-force') || !e.target.closest('[data-stop]')) { S.modal = null; consume('n-type', 'n-summary', 'n-labels', 'n-desc', 'n-parent', 'n-assignee'); render(); } },
+  createIssue: () => run(async () => {
+    const r = await api('POST', '/issue', { type: val('n-type') || 'Task', summary: val('n-summary'), parent: val('n-parent') || undefined, labels: val('n-labels').split(/[\s,]+/).filter(Boolean), assignee: val('n-assignee') || undefined, description: val('n-desc') || undefined });
+    S.modal = null;
+    consume('n-type', 'n-summary', 'n-labels', 'n-desc', 'n-parent', 'n-assignee');
+    S.open = r.key;
+    toast(`${r.key} created`);
+  }),
+  logRow: (el) => run(async () => {
+    const id = Number(el.dataset.id);
+    if (S.log.open.has(id)) { S.log.open.delete(id); render(); return; }
+    S.log.open.add(id);
+    render();
+    if (!S.log.bodies[id]) { S.log.bodies[id] = await (await fetch(`/_sim/api/log/${id}`)).json(); render(); }
+  }),
+  clearLog: () => run(() => api('POST', '/log/clear', {})),
+  preset: (el) => run(async () => { const f = await api('POST', '/faults', { preset: el.dataset.id }); toast(`Fault on: ${f.label}`); }),
+  customFault: () => run(async () => {
+    const f = await api('POST', '/faults', { method: val('fMethod'), path: val('fPath') || '/rest/', kind: val('fKind'), status: Number(val('fStatus')), delayMs: Number(val('fDelay')), remaining: Number(val('fTimes')), message: val('fMessage') });
+    consume('fPath', 'fMessage');
+    toast(`Fault on: ${f.label}`);
+  }),
+  unfault: (el) => run(() => api('DELETE', `/faults/${el.dataset.id}`, {})),
+  clearFaults: () => run(() => api('DELETE', '/faults', {})),
+  reset: (el) => run(async () => {
+    const k = 'reset:' + el.dataset.seed;
+    if (S.armed !== k) { S.armed = k; render(); return; }
+    await api('POST', '/reset', { seed: el.dataset.seed });
+    S.armed = null;
+    S.open = null;
+    toast('Project emptied');
+  })
+};
+const CHANGE = {
+  as: (el) => { S.as = el.value; store.set('as', S.as); render(); },
+  epicFilter: (el) => { S.board.epic = el.value; render(); },
+  boardDone: (el) => { S.board.done = el.checked; render(); },
+  logWrites: (el) => { S.log.writes = el.checked; render(); },
+  logErrors: (el) => { S.log.errors = el.checked; render(); },
+  rerender: () => render(),
+  assign: (el) => run(() => api('POST', `/issue/${S.open}/edit`, { assignee: el.value })),
+  import: (el) => run(async () => {
+    const file = el.files[0];
+    if (!file) { return; }
+    await api('POST', '/import', JSON.parse(await file.text()));
+    toast('State imported');
+  })
+};
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-do]');
+  if (!el || !A[el.dataset.do]) { return; }
+  if (el.tagName === 'A' && el.getAttribute('href')) { return; }
+  e.preventDefault();
+  if (el.dataset.do !== 'deleteIssue' && el.dataset.do !== 'reset') { S.armed = null; }
+  A[el.dataset.do](el, e);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (S.modal) { S.modal = null; render(); } else if (S.open) { A.close(); } return; }
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.card')) { e.preventDefault(); A.open(e.target); }
+});
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.dataset.change && CHANGE[el.dataset.change]) { CHANGE[el.dataset.change](el); return; }
+  const k = el.dataset.setting;
+  if (k) {
+    const v = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value;
+    run(async () => { await api('POST', '/settings', { [k]: v }); toast('Setting saved'); });
+  }
+});
+document.addEventListener('input', (e) => {
+  const k = e.target.dataset.input;
+  if (k === 'boardQ') { S.board.q = e.target.value; render(); }
+  if (k === 'logQ') { S.log.q = e.target.value; render(); }
+});
+
+const fromHash = () => {
+  const m = /issue=([\w-]+)/.exec(location.hash);
+  if (m) { S.open = m[1]; S.tab = 'board'; }
+  const t = /tab=(board|requests|faults|settings)/.exec(location.hash);
+  if (t) { S.tab = t[1]; }
+};
+window.addEventListener('hashchange', () => { fromHash(); render(); });
+fromHash();
+load().then(connect, () => { $('#app').innerHTML = '<main><p>The simulator does not answer.</p></main>'; connect(); });
+</script>
+</body>
+</html>

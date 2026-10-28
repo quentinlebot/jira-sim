@@ -1,0 +1,45 @@
+# The Jira simulator on MongoDB: docker compose up -d --build, docker compose down (add -v to drop the data).
+# The DevFactory extension (devfactory.dataSource "simulator") reuses it on 127.0.0.1:4865 instead of starting its own.
+# For PostgreSQL instead, run the simulator with --postgres <uri> (see README) and point jira-sim at it.
+name: devfactory-sim
+
+services:
+  mongo:
+    image: mongo:8.0.34
+    restart: unless-stopped
+    ports:
+      # Local only and without authentication: browse it with mongosh or Compass on mongodb://127.0.0.1:27017.
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  jira-sim:
+    # The simulator alone: .dockerignore keeps everything but src/, media/simulator.html and the build files out.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/devfactory-sim
+      JIRA_SIM_PUBLIC_URL: http://127.0.0.1:${JIRA_SIM_PORT:-4865}
+    ports:
+      - "127.0.0.1:${JIRA_SIM_PORT:-4865}:4865"
+    healthcheck:
+      # Healthy when it answers and reaches MongoDB (the ping reports an error otherwise).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4865/_sim/ping').then((r) => r.json()).then((j) => process.exit(j.error ? 1 : 0), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mongo-data:
