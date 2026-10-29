@@ -1,0 +1,45 @@
+# Builds the simulator image (Dockerfile) and publishes it on GHCR: ghcr.io/<owner>/jira-sim, tagged main
+# and sha-<commit>. Pull requests build and test it without publishing. Deployments pin it by digest.
+name: image
+on:
+  push:
+    branches: [main]
+    paths: [Dockerfile, .dockerignore, package.json, package-lock.json, tsconfig.json, src/**, scripts/**, media/simulator.html, .github/workflows/image.yml]
+  pull_request:
+    paths: [Dockerfile, .dockerignore, package.json, package-lock.json, tsconfig.json, src/**, scripts/**, media/simulator.html, .github/workflows/image.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/jira-sim
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build
+        run: |
+          docker build --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            -t "$IMAGE:main" -t "$IMAGE:sha-${GITHUB_SHA::7}" .
+
+      # in memory (no --state, --mongo nor --postgres): it answers its ping and serves the agent guide
+      - name: Test
+        run: |
+          docker run -d --name sim -p 127.0.0.1:4865:4865 "$IMAGE:main"
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4865/_sim/ping && break; sleep 1; done
+          curl -fsS http://127.0.0.1:4865/_sim/ping | grep -q devfactory-simulator
+          curl -fsS http://127.0.0.1:4865/llms.txt > /dev/null
+          test "$(docker exec sim id -un)" = node
+          docker rm -f sim
+
+      - name: Publish
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push --all-tags "$IMAGE"
+          echo "\`$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:main")\`" >> "$GITHUB_STEP_SUMMARY"
