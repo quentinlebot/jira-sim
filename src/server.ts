@@ -7,10 +7,10 @@ import * as http from 'http';
 import * as path from 'path';
 import { adfToText, textToAdf } from './jiraFormat';
 import { compileJql, JqlError, parseJql } from './jql';
-import { DEFAULT_PROJECT, seedState } from './seed';
+import { DEFAULT_PROJECT, seedState, withSeedWorkflow } from './seed';
 import { FileStorage, SimContext, SimStorage } from './storage';
 import {
-  DEFAULT_SETTINGS, durationSeconds, formatSeconds, IssueCore, jiraTime, LogEntry, SimChange, SimComment, SimFault, SimIssue, SimLink,
+  DECISION, DEFAULT_SETTINGS, durationSeconds, formatSeconds, IssueCore, jiraTime, LogEntry, SimChange, SimComment, SimFault, SimIssue, SimLink,
   SimSettings, SimState, SimTransition, SimWorklog, STATUS_CATEGORIES, statusOf, transitionsOf
 } from './types';
 
@@ -109,12 +109,17 @@ export class JiraSimulator {
 
   /** The project and its number of issues, for the CLI's banner. */
   async summary() {
-    const [ctx, issues] = await Promise.all([this.storage.context(), this.storage.countIssues()]);
+    const [ctx, issues] = await Promise.all([this.context(), this.storage.countIssues()]);
     return { project: ctx.project.key, issues };
   }
 
+  /** The stored context, completed with what the seed gained since the state was written (the Decision type). */
+  private async context(): Promise<SimContext> {
+    return withSeedWorkflow(await this.storage.context());
+  }
+
   async reset(project = this.opts.project ?? DEFAULT_PROJECT) {
-    const keep = (await this.storage.context()).settings;
+    const keep = (await this.context()).settings;
     const state = seedState(project);
     state.settings = { ...DEFAULT_SETTINGS, ...keep };
     await this.storage.replaceState(state);
@@ -163,7 +168,7 @@ export class JiraSimulator {
     } catch {
       request = raw;
     }
-    const [ctx, faults] = await Promise.all([this.storage.context(), this.storage.faults()]);
+    const [ctx, faults] = await Promise.all([this.context(), this.storage.faults()]);
     let fault = faults.find((f) => (f.method === '*' || f.method === method) && url.pathname.includes(f.path) && f.remaining !== 0);
     const delay = ctx.settings.latencyMs + (fault?.kind === 'delay' ? fault.delayMs : 0);
     if (delay > 0) { await new Promise((r) => setTimeout(r, delay)); }
@@ -454,12 +459,15 @@ export class JiraSimulator {
     for (const k of Object.keys(fields)) {
       if (k !== 'resolution' || !toDone) { errors[k] = `Field '${k}' cannot be set. It is not on the appropriate screen, or unknown.`; }
     }
-    const resName = fields.resolution?.name ?? (fields.resolution?.id ? ctx.resolutions[Number(fields.resolution.id) - 10000] : undefined);
-    if (fields.resolution && toDone && !ctx.resolutions.includes(resName)) { errors.resolution = "Could not find valid 'id' or 'name' in resolution object."; }
-    if (toDone && !fields.resolution && ctx.settings.resolutionRequired) { errors.resolution = 'Resolution is required.'; }
+    // A transition that sets its own resolution (a Decision's) ignores the one asked, as a post-function would.
+    const resName = t.resolution ?? fields.resolution?.name ?? (fields.resolution?.id ? ctx.resolutions[Number(fields.resolution.id) - 10000] : undefined);
+    if (fields.resolution && toDone && !t.resolution && !ctx.resolutions.includes(resName)) { errors.resolution = "Could not find valid 'id' or 'name' in resolution object."; }
+    if (toDone && !fields.resolution && !t.resolution && ctx.settings.resolutionRequired) { errors.resolution = 'Resolution is required.'; }
+    const comments = (update.comment ?? []).filter((c) => c.add);
+    if (t.needsComment && !comments.length) { errors.comment = 'Comment is required.'; }
     if (Object.keys(errors).length) { throw fieldErrors(errors); }
     const addWorklog = update.worklog?.find((w) => w.add)?.add;
-    if (toDone && issue.type !== 'Epic' && ctx.settings.worklogRequired && !issue.worklogs.length && !addWorklog) {
+    if (toDone && issue.type !== 'Epic' && issue.type !== DECISION && ctx.settings.worklogRequired && !issue.worklogs.length && !addWorklog) {
       throw new ApiError(400, ['Log the time spent before closing: the workflow requires time spent on Done (validator of the simulator).']);
     }
     if (t.to === 'In Review' && issue.type === 'Epic' && ctx.settings.reviewNeedsTasksDone) {
@@ -467,7 +475,7 @@ export class JiraSimulator {
       if (open.length) { throw new ApiError(400, [`All tasks must be Done before review: ${open.map((i) => i.key).join(', ')} still open (validator of the simulator).`]); }
     }
     if (addWorklog) { await this.worklog(issue, addWorklog, actor); }
-    for (const c of update.comment ?? []) { if (c.add) { await this.comment(issue, c.add.body, actor); } }
+    for (const c of comments) { await this.comment(issue, c.add.body, actor); }
     const changes: SimChange[] = [{ at: jiraTime(), author: actor, field: 'status', from: issue.status, to: t.to }];
     const patch: Partial<IssueCore> = { status: t.to };
     if (toDone) {
@@ -552,7 +560,7 @@ export class JiraSimulator {
     const toDone = statusOf(ctx, t.to).category === 'done';
     return {
       id: t.id, name: t.name, to: this.statusJson(ctx, t.to), hasScreen: toDone, isGlobal: t.from === '*', isInitial: false, isAvailable: true, isConditional: false, isLooped: false,
-      ...(withFields ? { fields: toDone ? { resolution: { required: ctx.settings.resolutionRequired, schema: { type: 'resolution', system: 'resolution' }, name: 'Resolution', key: 'resolution', operations: ['set'], allowedValues: ctx.resolutions.map((name, n) => ({ id: String(10000 + n), name })) } } : {} } : {})
+      ...(withFields ? { fields: toDone && !t.resolution ? { resolution: { required: ctx.settings.resolutionRequired, schema: { type: 'resolution', system: 'resolution' }, name: 'Resolution', key: 'resolution', operations: ['set'], allowedValues: ctx.resolutions.map((name, n) => ({ id: String(10000 + n), name })) } } : {} } : {})
     };
   }
 
@@ -660,7 +668,7 @@ export class JiraSimulator {
 
   /** What the dashboard reads and does; its writes are made as the user it acts as, like changes made in Jira by someone else. */
   private async dashboardApi(method: string, p: string, b: Record<string, any>): Promise<Reply> {
-    const ctx = await this.storage.context();
+    const ctx = await this.context();
     const actor = ctx.users.some((u) => u.accountId === b.as) ? String(b.as) : ctx.me;
     let r: RegExpExecArray | null;
     if (p === '/state' && method === 'GET') {

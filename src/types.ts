@@ -1,4 +1,4 @@
-// State of the Jira simulator: one project, its issues and links, the seeded epic and task workflows, the simulated validators and faults.
+// State of the Jira simulator: one project, its issues and links, the seeded epic, task and decision workflows, the simulated validators and faults.
 
 export interface SimUser { accountId: string; displayName: string; emailAddress: string }
 
@@ -39,7 +39,16 @@ export interface SimLink { id: string; type: string; outward: string; inward: st
 
 export interface SimStatus { id: string; name: string; category: 'new' | 'indeterminate' | 'done' }
 
-export interface SimTransition { id: string; name: string; from: string | '*'; to: string }
+export interface SimTransition {
+  id: string;
+  name: string;
+  from: string | '*';
+  to: string;
+  /** Set by the transition itself, as a Jira post-function would: a Decision's outcome. */
+  resolution?: string;
+  /** The transition is refused without a comment. */
+  needsComment?: boolean;
+}
 
 export interface SimSettings {
   /** conventions: the epic and task workflows of jira-workflow-conventions.md. free: any status to any status. */
@@ -138,7 +147,18 @@ export const TASK_FLOW: SimTransition[] = [
   { id: '81', name: "Won't Do", from: 'Open', to: 'Done' }
 ];
 
-export const RESOLUTIONS = ['Done', 'Resolved', 'Approved', 'Rejected', "Won't Do", 'Duplicate', 'Invalid', 'Cannot Reproduce', 'Declined', 'Cancelled', 'Abandoned'];
+/** The issue type agents ask you a decision with. */
+export const DECISION = 'Decision';
+
+/** A Decision goes from Open to Done once: the transition taken is the outcome, and its resolution is what agents read. */
+export const DECISION_FLOW: SimTransition[] = [
+  { id: '91', name: 'Approve', from: 'Open', to: 'Done', resolution: 'Approved' },
+  { id: '92', name: 'Reject', from: 'Open', to: 'Done', resolution: 'Rejected' },
+  { id: '93', name: 'Answer', from: 'Open', to: 'Done', resolution: 'Answered', needsComment: true },
+  { id: '94', name: 'Withdraw', from: 'Open', to: 'Done', resolution: 'Cancelled' }
+];
+
+export const RESOLUTIONS = ['Done', 'Resolved', 'Approved', 'Rejected', "Won't Do", 'Duplicate', 'Invalid', 'Cannot Reproduce', 'Declined', 'Cancelled', 'Abandoned', 'Answered'];
 
 export const DEFAULT_SETTINGS: SimSettings = {
   workflow: 'conventions',
@@ -158,6 +178,8 @@ export function statusOf(state: Pick<SimState, 'statuses'>, name: string): SimSt
 
 /** The transitions available from the issue's status, in the configured workflow. */
 export function transitionsOf(state: Pick<SimState, 'statuses' | 'settings'>, issue: Pick<SimIssue, 'type' | 'status'>): SimTransition[] {
+  // A Decision keeps its own flow whatever the setting: the free workflow is for epics and tasks.
+  if (issue.type === DECISION) { return DECISION_FLOW.filter((t) => t.from === issue.status); }
   if (state.settings.workflow === 'free') {
     return state.statuses.filter((s) => s.name !== issue.status).map((s) => ({ id: String(101 + state.statuses.indexOf(s)), name: s.name, from: '*', to: s.name }));
   }

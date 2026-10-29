@@ -15,7 +15,8 @@ export function seedState(project = DEFAULT_PROJECT): SimState {
       { id: '10001', name: 'Task', hierarchyLevel: 0 },
       { id: '10002', name: 'Bug', hierarchyLevel: 0 },
       { id: '10003', name: 'Story', hierarchyLevel: 0 },
-      { id: '10004', name: 'Sub-task', hierarchyLevel: -1 }
+      { id: '10004', name: 'Sub-task', hierarchyLevel: -1 },
+      { id: '10005', name: 'Decision', hierarchyLevel: 0 }
     ],
     resolutions: [...RESOLUTIONS],
     linkTypes: [
@@ -38,4 +39,15 @@ export function seedState(project = DEFAULT_PROJECT): SimState {
     settings: { ...DEFAULT_SETTINGS },
     faults: []
   };
+}
+
+/**
+ * The stored workflow metadata with the issue types and resolutions the seed gained since it was written, so a database
+ * seeded before Decisions has them on every read, without a write. Appended: the stored resolutions keep their ids.
+ */
+export function withSeedWorkflow<T extends Pick<SimState, 'issueTypes' | 'resolutions'>>(ctx: T): T {
+  const seed = seedState();
+  const types = seed.issueTypes.filter((t) => !ctx.issueTypes.some((x) => x.name === t.name));
+  const resolutions = seed.resolutions.filter((r) => !ctx.resolutions.includes(r));
+  return types.length || resolutions.length ? { ...ctx, issueTypes: [...ctx.issueTypes, ...types], resolutions: [...ctx.resolutions, ...resolutions] } : ctx;
 }
