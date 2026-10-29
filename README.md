@@ -21,6 +21,8 @@ npm start                         # compiles, then runs with the state in .simul
 
 ```
 Usage: jira-sim [--port 4865] [--host 127.0.0.1] [--state <file.json> | --mongo <uri> | --postgres <uri>] [--project <key>] [--public-url <url>]
+       jira-sim ask <question> --agent <source> [--about <KEY>] [--context <file|->] [--url <url>] [--wait 30m] [--json]
+                                    ask you a decision and wait for it (jira-sim ask --help)
 
   --state <file>     keep the state in a JSON file.
   --mongo <uri>      keep it in MongoDB, e.g. mongodb://127.0.0.1:27017/devfactory-sim (default: $MONGODB_URI).
@@ -44,22 +46,59 @@ The dashboard's changes show in the extension after **Refresh**, like edits by a
 
 ## Dashboard
 
-`http://127.0.0.1:<port>/` — four tabs:
+`http://127.0.0.1:<port>/` — five tabs:
 
-- **Board**: the issues by status, filters, and an issue panel to act as a teammate: transitions (with resolution and time spent), comments, work log, links, labels, assignee, description, history.
+- **Decisions**: what agents ask you, oldest first, by source, with Approve, Reject and Answer (one text box for a comment, a reason or the answer); then the settled ones with their outcome and your reply. The tab and the page title count what waits. You answer as the simulated you. See [Decisions](#decisions).
+- **Board**: the issues by status (decisions left out unless **Show decisions** is ticked), filters, and an issue panel to act as a teammate: transitions (with resolution and time spent), comments, work log, links, labels, assignee, description, history.
 - **Requests**: every REST call with its status, time, error and bodies.
 - **Faults**: token expired (401), no permission (403), rate limited (429), Jira down (503), dropped connection, slow Jira, refused create, transition, link or search; or a custom one.
 - **Workflow & settings**: the conventions' epic and task workflows or a free one; validators (resolution and time spent on Done, tasks done before epic review, Epic Name required); latency; search page size, to exercise paging; who new issues are assigned to; reset (empty project), export, import.
 
 ## The API it implements
 
-What the extension calls, with Jira's checks and messages: enhanced JQL search (`/rest/api/3/search/jql`, a JQL subset with Jira's errors, `nextPageToken` paging), issues (get, create, edit, delete), transitions, comments, worklogs, issue links, and `myself`. Basic authentication with any email and token signs in as the simulated you, named after the email it sends. The epic and task workflows are enforced: a client that skips a state gets "no transition", Done needs a resolution, and a task Done needs time spent.
+What the extension calls, with Jira's checks and messages: enhanced JQL search (`/rest/api/3/search/jql`, a JQL subset with Jira's errors, `nextPageToken` paging), issues (get, create, edit, delete), transitions, comments, worklogs, issue links, and `myself`. Basic authentication with any email and token signs in as the simulated you, named after the email it sends. The epic and task workflows are enforced: a client that skips a state gets "no transition", Done needs a resolution, and a task Done needs time spent. A Decision has its own flow ([Decisions](#decisions)).
+
+## Decisions
+
+Agents of any source (the extension, Claude Code, a script, CI) can put a question to you as an issue of type **Decision**, and wait for your answer in the **Decisions** tab. It is plain Jira: a real Jira with a Decision type and the same transitions works the same way.
+
+| Transition | id | From → to | Resolution | |
+|------------|----|-----------|------------|-|
+| Approve | 91 | Open → Done | Approved | comment optional |
+| Reject | 92 | Open → Done | Rejected | comment optional: the reason |
+| Answer | 93 | Open → Done | Answered | a comment is required (`update.comment`) |
+| Withdraw | 94 | Open → Done | Cancelled | the agent gives up |
+
+A Decision keeps this flow in either workflow setting; the resolution and time-spent validators do not apply to it. Once settled it is final.
+
+An agent:
+
+```sh
+J='Content-Type: application/json'; A="Authorization: Basic $(printf agent:x | base64)"; U=http://127.0.0.1:4865/rest/api/3
+curl -s -H "$A" -H "$J" $U/issue -d '{"fields":{"project":{"key":"SIM"},"issuetype":{"name":"Decision"},
+  "summary":"Push feature/x to origin?","labels":["agent:my-agent"],
+  "description":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"3 commits, tests pass."}]}]}}}'
+# → {"id":"10100","key":"SIM-1",...}; to tie it to a task: POST $U/issueLink, type Relates
+curl -s -H "$A" "$U/issue/SIM-1?fields=resolution,comment"
+# resolution null: it waits; Approved, Rejected, Answered or Cancelled: settled, and your reply is the last comment
+```
+
+What waits for you: `issuetype = Decision AND resolution is EMPTY`. The source is the `agent:<source>` label; sign-in is unchanged.
+
+Or in one command, which waits and gives the outcome as its exit code (0 approved, 1 rejected, 2 answered, 3 withdrawn or timed out, 4 failed):
+
+```sh
+jira-sim ask "Push feature/x to origin?" --agent claude-code --about SIM-12 --context notes.md --wait 30m
+# stdout: "approved SIM-13", then your reply if there is one; --json prints { key, outcome, reply }
+```
+
+`ask` uses the REST API only: with `--url` (or `$JIRA_URL`), `--project`, `$JIRA_EMAIL` and `$JIRA_TOKEN` it asks a real Jira. On timeout, on Ctrl-C or on a failure once the decision exists, it withdraws it, so nothing stays waiting.
 
 ## State: a file, MongoDB or PostgreSQL
 
 One backend behind one interface (`src/storage.ts`): a JSON file (or memory), one collection per entity in MongoDB, one table per entity in PostgreSQL. Every change is one write; ids and issue numbers come from atomic counters; JQL is evaluated in memory over the issues read from the database, the same evaluator whatever the backend.
 
-An empty database is seeded as an empty project, and **reset** empties it again (the settings stay). Credentials never appear in logs or the dashboard: the connection string is shown redacted.
+An empty database is seeded as an empty project, and **reset** empties it again (the settings stay). A state written by an older version is read with the issue types and resolutions added since (the Decision type, the Answered resolution), without a write. Credentials never appear in logs or the dashboard: the connection string is shown redacted.
 
 ### On MongoDB (docker compose)
 

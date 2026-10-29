@@ -31,9 +31,10 @@ Everything lives in `src/`, flat, compiled to `out/` by one build (`tsconfig.jso
   - No `vscode` import anywhere: this runs in plain node and in Docker.
   - An empty database (or one whose state was cut short: the `instance` marker row is written last) is seeded on the next start. A reset is a full replacement; with PostgreSQL it is one transaction.
   - Credentials in a connection string never reach logs or the dashboard: both storages show a redacted location.
-- `seed.ts`: the starting state — an empty project with its workflow metadata, the three simulated users and the settings. `--project <key>` names the project (`SIM` by default). No sample data: nothing internal is seeded, and it stays that way.
+- `seed.ts`: the starting state — an empty project with its workflow metadata, the three simulated users and the settings. `--project <key>` names the project (`SIM` by default). No sample data: nothing internal is seeded, and it stays that way. `withSeedWorkflow` completes the metadata a storage returns with the issue types and resolutions the seed gained since it was written; the server reads every context through it, so old databases need no migration and the storages no change.
 - `jiraFormat.ts`: ADF ↔ plain text, a trimmed copy of the extension's module.
-- `types.ts`: the state, the epic and task workflows, settings and faults.
+- `types.ts`: the state, the epic, task and decision workflows, settings and faults. A `Decision` (what agents ask you) goes `Open` → `Done` by Approve, Reject, Answer (comment required) or Withdraw, each setting its own resolution (`SimTransition.resolution`); it keeps this flow in the free workflow, and the resolution and time-spent validators skip it.
+- `ask.ts`: `jira-sim ask`, a REST v3 client that creates a Decision and waits for it. Only `cli.ts` loads it, and it imports `jiraFormat` and `types` only (`scripts/check-boundaries.js`).
 
 The DevFactory extension finds a running simulator through `/_sim/ping` (it answers `id: "devfactory-simulator"`); when none answers it starts its `devfactory.simulator.command`. Keep that ping contract and the CLI flags stable.
 
