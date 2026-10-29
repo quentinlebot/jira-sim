@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Checks the import rules of src/ and exits 1 on any violation.
-// Direct imports only: with these rules the server's closure cannot reach the CLI, the mongodb driver or the pg driver.
+// Direct imports only: with these rules the server's closure cannot reach the CLI, the mongodb driver or the pg driver,
+// and `jira-sim ask` (ask.ts) stays a REST client: it never loads the server or a storage.
 // Plain node, no dependencies: it runs first in npm run compile.
 'use strict';
 const fs = require('fs');
@@ -34,6 +35,8 @@ function violation(file, spec) {
   if (target.startsWith('..')) return 'imports outside src/';
   if (['mongoStorage', 'postgresStorage'].includes(target) && from !== 'cli.ts') return 'only cli.ts may load the database storages';
   if (target === 'cli') return 'nothing may import the CLI';
+  if (target === 'ask' && from !== 'cli.ts') return 'only cli.ts may load ask.ts';
+  if (from === 'ask.ts' && !['jiraFormat', 'types'].includes(target)) return 'ask.ts imports jiraFormat and types only: it is a REST client';
   return null;
 }
 

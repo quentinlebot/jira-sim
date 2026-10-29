@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // The Jira simulator as its own process:
 //   jira-sim [--port 4865] [--host 127.0.0.1] [--state <file.json> | --mongo <uri> | --postgres <uri>] [--project <key>] [--public-url <url>]
+//   jira-sim ask <question> --agent <source> [...]   an agent's decision, through the REST API only (ask.ts)
 import { DEFAULT_PORT, JiraSimulator } from './server';
 import { DEFAULT_PROJECT } from './seed';
 import { describeStorage, SimStorage } from './storage';
 
 const USAGE = `Usage: jira-sim [--port 4865] [--host 127.0.0.1] [--state <file.json> | --mongo <uri> | --postgres <uri>] [--project <key>] [--public-url <url>]
+       jira-sim ask <question> --agent <source> [--about <KEY>] [--context <file|->] [--url <url>] [--wait 30m] [--json]
+                                    ask you a decision and wait for it (jira-sim ask --help)
 
   --state <file>     keep the state in a JSON file.
   --mongo <uri>      keep it in MongoDB, e.g. mongodb://127.0.0.1:27017/devfactory-sim (default: $MONGODB_URI).
@@ -51,6 +54,11 @@ async function storageFor(mongo: string | undefined, postgres: string | undefine
 }
 
 async function main() {
+  // Loaded only for the subcommand: the simulator itself never needs the client.
+  if (args[0] === 'ask') {
+    const { ask } = await import('./ask');
+    process.exit(await ask(args.slice(1)));
+  }
   if (args.includes('--help') || args.includes('-h')) {
     console.log(USAGE);
     process.exit(0);
