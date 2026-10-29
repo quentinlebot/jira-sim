@@ -50,6 +50,7 @@ nav.tabs button { border: 0; background: none; padding: 10px 12px; cursor: point
 nav.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--chip); color: var(--muted); font-size: 11.5px; text-align: center; }
 .count.err { background: var(--err-bg); color: var(--err); }
+.count.hot { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
 main { flex: 1 1 auto; overflow: auto; padding: 16px; }
 
 .btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--raised); cursor: pointer; white-space: nowrap; }
@@ -76,7 +77,7 @@ label.check { display: inline-flex; gap: 6px; align-items: center; cursor: point
 .pill.done { background: color-mix(in srgb, var(--st-done) 20%, transparent); color: var(--st-done); }
 .chip { display: inline-block; padding: 0 6px; border-radius: 3px; background: var(--chip); font-size: 11.5px; color: var(--muted); }
 .type { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; color: #fff; font-size: 10px; font-weight: 700; flex: none; }
-.type.Epic { background: var(--epic); } .type.Task { background: var(--task); } .type.Bug { background: var(--bug); } .type.Story { background: var(--story); } .type.Sub-task { background: var(--task); }
+.type.Epic { background: var(--epic); } .type.Task { background: var(--task); } .type.Bug { background: var(--bug); } .type.Story { background: var(--story); } .type.Sub-task { background: var(--task); } .type.Decision { background: var(--st-hold); }
 .avatar { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 10.5px; font-weight: 700; color: #fff; flex: none; }
 .avatar.none { background: var(--chip); color: var(--faint); border: 1px dashed var(--line-strong); }
 
@@ -136,6 +137,10 @@ section.block > h2 { font-size: 15px; margin: 0 0 10px; }
 .list { display: flex; flex-direction: column; gap: 6px; }
 .tr-form { border: 1px solid var(--accent); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--accent-soft); }
 .history { font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+.decision { border-left: 3px solid var(--st-hold); }
+.decision.settled { border-left-color: var(--line-strong); }
+.decision .q { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.decision .desc { max-height: 280px; overflow: auto; overflow-wrap: anywhere; }
 
 .modal-back { position: fixed; inset: 0; background: rgba(9, 30, 66, .45); display: grid; place-items: center; z-index: 20; padding: 16px; }
 .modal { background: var(--panel); border-radius: 8px; box-shadow: var(--shadow-lg); width: min(560px, 100%); padding: 18px; display: flex; flex-direction: column; gap: 10px; }
@@ -164,8 +169,9 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const store = { get: (k) => { try { return localStorage.getItem('jira-sim.' + k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem('jira-sim.' + k, v); } catch { /* private mode */ } } };
 
 const S = {
-  data: null, live: false, tab: store.get('tab') || 'board', open: null, as: store.get('as') || 'sim-sam',
-  board: { type: 'all', epic: '', q: '', done: true },
+  data: null, live: false, tab: store.get('tab') || 'decisions', open: null, as: store.get('as') || 'sim-sam',
+  board: { type: 'all', epic: '', q: '', done: true, decisions: false },
+  dec: { source: '' },
   log: { q: '', writes: false, errors: false, open: new Set(), bodies: {} },
   pending: null, armed: null, modal: null, editDesc: false
 };
@@ -210,6 +216,10 @@ function avatar(id) {
 const cat = (i) => (i.status === 'On Hold' ? 'hold' : i.category);
 const pill = (i) => `<span class="pill ${cat(i)}">${esc(i.status)}</span>`;
 const typeIcon = (t) => `<span class="type ${esc(t)}" title="${esc(t)}">${esc(t[0])}</span>`;
+const isDecision = (i) => i.type === 'Decision';
+const sourceOf = (i) => (i.labels.find((l) => l.startsWith('agent:')) || 'agent:unknown').slice('agent:'.length);
+const OUTCOME = { Approved: 'Approved', Rejected: 'Rejected', Answered: 'Answered', Cancelled: 'Withdrawn' };
+const waitingDecisions = () => S.data.issues.filter((i) => isDecision(i) && !i.resolution);
 function ago(iso) {
   if (!iso) { return ''; }
   const s = (Date.now() - Date.parse(iso)) / 1000;
@@ -248,7 +258,9 @@ function render() {
   const a = document.activeElement;
   const focus = a && a.id ? { id: a.id, s: a.selectionStart, e: a.selectionEnd } : null;
   const scroll = { main: $('main')?.scrollTop, drawer: $('#drawer .body')?.scrollTop, board: $('.board')?.scrollLeft };
-  $('#app').innerHTML = header() + tabs() + `<main>${S.tab === 'requests' ? requests() : S.tab === 'faults' ? faults() : S.tab === 'settings' ? settings() : board()}</main>` + drawer() + modal();
+  const waiting = waitingDecisions().length;
+  document.title = (waiting ? `(${waiting}) ` : '') + 'Jira simulator';
+  $('#app').innerHTML = header() + tabs() + `<main>${S.tab === 'decisions' ? decisions() : S.tab === 'requests' ? requests() : S.tab === 'faults' ? faults() : S.tab === 'settings' ? settings() : board()}</main>` + drawer() + modal();
   for (const [id, v] of dirty) { const el = document.getElementById(id); if (el && el.value !== v) { el.value = v; } }
   if (focus) {
     const el = document.getElementById(focus.id);
@@ -281,8 +293,10 @@ function header() {
 function tabs() {
   const errs = S.data.log.filter((l) => l.status >= 400 || l.status === 0).length;
   const t = (id, label, extra = '') => `<button class="${S.tab === id ? 'on' : ''}" data-do="tab" data-tab="${id}">${label}${extra}</button>`;
+  const waiting = waitingDecisions().length;
   return `<nav class="tabs" aria-label="Sections">
-    ${t('board', 'Board', `<span class="count">${S.data.issues.length}</span>`)}
+    ${t('decisions', 'Decisions', `<span class="count ${waiting ? 'hot' : ''}">${waiting}</span>`)}
+    ${t('board', 'Board', `<span class="count">${S.data.issues.filter((i) => !isDecision(i)).length}</span>`)}
     ${t('requests', 'Requests', `<span class="count">${S.data.log.length}</span>${errs ? `<span class="count err">${errs} failed</span>` : ''}`)}
     ${t('faults', 'Faults', S.data.faults.length ? `<span class="count err">${S.data.faults.length} active</span>` : '')}
     ${t('settings', 'Workflow & settings')}
@@ -294,6 +308,7 @@ function board() {
   const epics = S.data.issues.filter((i) => i.type === 'Epic');
   const q = b.q.trim().toLowerCase();
   const shown = S.data.issues.filter((i) =>
+    (b.decisions || !isDecision(i)) &&
     (b.type === 'all' || (b.type === 'epics' ? i.type === 'Epic' : i.type !== 'Epic')) &&
     (!b.epic || i.key === b.epic || i.parent === b.epic) &&
     (b.done || i.category !== 'done') &&
@@ -310,6 +325,7 @@ function board() {
       <select id="epicFilter" data-change="epicFilter" aria-label="Epic"><option value="">All epics</option>${epics.map((e) => `<option value="${esc(e.key)}" ${b.epic === e.key ? 'selected' : ''}>${esc(e.key)} · ${esc(e.summary.slice(0, 60))}</option>`).join('')}</select>
       <input id="boardQ" type="text" placeholder="Search key, summary, label" value="${esc(b.q)}" data-input="boardQ" aria-label="Search">
       <label class="check"><input type="checkbox" data-change="boardDone" ${b.done ? 'checked' : ''}> Show Done</label>
+      <label class="check"><input type="checkbox" data-change="boardDecisions" ${b.decisions ? 'checked' : ''}> Show decisions</label>
       <span class="grow"></span>
       <span class="muted small">${shown.length} of ${S.data.issues.length} issues · changes made here show in VS Code after Refresh, like edits by a teammate in Jira</span>
     </div>
@@ -334,6 +350,50 @@ function spent(i) {
   return [h && `${h}h`, m && `${m}m`].filter(Boolean).join(' ') || '0m';
 }
 
+function decisions() {
+  const all = S.data.issues.filter(isDecision);
+  const sources = [...new Set(all.map(sourceOf))].sort();
+  const src = sources.includes(S.dec.source) ? S.dec.source : '';
+  const shown = all.filter((i) => !src || sourceOf(i) === src);
+  const waiting = shown.filter((i) => !i.resolution).sort((x, y) => Date.parse(x.created) - Date.parse(y.created));
+  const settled = shown.filter((i) => i.resolution).sort((x, y) => Date.parse(y.resolutionDate || y.updated) - Date.parse(x.resolutionDate || x.updated)).slice(0, 30);
+  const count = (s) => all.filter((i) => !i.resolution && (!s || sourceOf(i) === s)).length;
+  return `<div class="toolbar">
+      <select id="decSource" data-change="decSource" aria-label="Source"><option value="">All sources · ${count('')} waiting</option>${sources.map((s) => `<option value="${esc(s)}" ${s === src ? 'selected' : ''}>${esc(s)} · ${count(s)} waiting</option>`).join('')}</select>
+      <span class="grow"></span>
+      <span class="muted small">Agents ask with an issue of type Decision and a label agent:&lt;source&gt;; you answer as ${esc(userName(S.data.me))}.</span>
+    </div>
+    <section class="block"><h2>Waiting · ${waiting.length}</h2><div class="list">${waiting.map(decisionCard).join('') || '<div class="box"><span class="muted">Nothing waits for you.</span></div>'}</div></section>
+    <section class="block"><h2>Settled</h2><div class="list">${settled.map(settledCard).join('') || '<div class="box"><span class="muted">None yet.</span></div>'}</div></section>`;
+}
+function aboutOf(i) {
+  const rel = S.data.links.filter((l) => l.inward === i.key || l.outward === i.key).map((l) => issue(l.inward === i.key ? l.outward : l.inward)).filter(Boolean);
+  return rel.length ? `<div class="small">About ${rel.map((r) => `<a class="mono" data-do="openOnBoard" data-key="${esc(r.key)}">${esc(r.key)}</a> <span class="muted">${esc(r.summary)}</span>`).join(', ')}</div>` : '';
+}
+function decisionCard(i) {
+  const id = 'dec-' + i.key;
+  const text = dirty.get(id) ?? '';
+  // Withdraw is the agent's: you approve, reject or answer.
+  const buttons = i.transitions.filter((t) => t.resolution && t.resolution !== 'Cancelled').map((t) => `<button ${t.needsComment ? `id="need-${esc(i.key)}"` : ''} class="btn sm ${t.resolution === 'Approved' ? 'primary' : t.resolution === 'Rejected' ? 'danger' : ''}" data-do="decide" data-key="${esc(i.key)}" data-id="${esc(t.id)}" ${t.needsComment && !text.trim() ? 'disabled' : ''}>${esc(t.name)}</button>`).join('');
+  return `<div class="box decision" aria-label="Decision ${esc(i.key)}">
+    <div class="row small"><a class="mono" data-do="openOnBoard" data-key="${esc(i.key)}">${esc(i.key)}</a><span class="chip">${esc(sourceOf(i))}</span><span class="muted">asked ${ago(i.created)}</span></div>
+    <div class="q">${esc(i.summary)}</div>
+    ${i.descriptionText ? `<div class="desc">${descHtml(i.descriptionText)}</div>` : ''}
+    ${aboutOf(i)}
+    <textarea id="${esc(id)}" rows="2" data-input="decText" data-key="${esc(i.key)}" placeholder="Comment, reason or answer (Answer needs one)" aria-label="Comment, reason or answer"></textarea>
+    <div class="row">${buttons}</div>
+  </div>`;
+}
+function settledCard(i) {
+  const reply = i.comments[i.comments.length - 1];
+  const tone = i.resolution === 'Approved' ? 'done' : i.resolution === 'Rejected' ? 'hold' : i.resolution === 'Answered' ? 'indeterminate' : 'new';
+  return `<div class="box decision settled">
+    <div class="row small"><a class="mono" data-do="openOnBoard" data-key="${esc(i.key)}">${esc(i.key)}</a><span class="chip">${esc(sourceOf(i))}</span><span class="pill ${tone}">${esc(OUTCOME[i.resolution] || i.resolution)}</span><span class="muted">${ago(i.resolutionDate || i.updated)}</span></div>
+    <div class="q" style="font-size:13.5px;font-weight:400">${esc(i.summary)}</div>
+    ${aboutOf(i)}
+    ${reply ? `<div class="item"><div class="by"><strong>${esc(userName(reply.author))}</strong> · ${ago(reply.created)}</div><div class="desc">${descHtml(reply.text)}</div></div>` : ''}
+  </div>`;
+}
 function requests() {
   const L = S.log;
   const q = L.q.trim().toLowerCase();
@@ -431,6 +491,7 @@ function settings() {
     </div>
   </div>
   <section class="block" style="margin-top:18px"><h2>Transitions</h2><div class="grid2">
+    ${flow('Decision · in either workflow', [['Open', 'Approve', 'Done · Approved'], ['Open', 'Reject', 'Done · Rejected'], ['Open', 'Answer (comment required)', 'Done · Answered'], ['Open', 'Withdraw', 'Done · Cancelled']])}
     ${st.workflow === 'free' ? '<div class="box"><span class="muted">Free workflow: every status has a transition to every other status, named after it.</span></div>' : flow('Epic', [['Open', 'Accept', 'Accepted'], ['Accepted', 'Mark ready', 'Ready'], ['Ready', 'Start', 'In Progress'], ['In Progress', 'Ask review', 'In Review'], ['In Review', 'Close', 'Done'], ['In Progress', 'Put on hold', 'On Hold'], ['On Hold', 'Resume', 'In Progress']]) + flow('Task', [['Open', 'Accept', 'Accepted'], ['Accepted', 'Mark ready', 'Ready'], ['Ready', 'Start', 'In Progress'], ['In Progress', 'Done', 'Done'], ['In Progress', 'Put on hold', 'On Hold'], ['On Hold', 'Resume', 'In Progress'], ['Open', "Won't Do", 'Done']])}
   </div></section>
   <section class="block"><h2>Connect</h2><div class="box small">
@@ -454,10 +515,10 @@ function drawer() {
       <div class="row">${typeIcon(i.type)}<a class="mono" data-do="open" data-key="${esc(i.key)}">${esc(i.key)}</a>${pill(i)}${i.resolution ? `<span class="chip">${esc(i.resolution)}</span>` : ''}<span class="grow"></span><button class="btn ghost sm" data-do="close" aria-label="Close">✕</button></div>
       <div class="row" style="flex-wrap:nowrap"><input id="sum-${esc(i.key)}" type="text" value="${esc(i.summary)}" style="flex:1 1 auto;font-weight:600" aria-label="Summary"><button class="btn sm" data-do="saveSummary">Save</button></div>
       <div class="row">${i.transitions.length ? i.transitions.map((t) => `<button class="btn sm ${p && p.id === t.id ? 'primary' : ''}" data-do="transition" data-id="${esc(t.id)}" title="→ ${esc(t.to)}">${esc(t.name)}</button>`).join('') : '<span class="small muted">No transition from this status.</span>'}</div>
-      ${p ? `<div class="tr-form"><strong>${esc(p.name)} → ${esc(p.to)}</strong>
-        <div class="row"><label class="field" style="flex:1 1 160px"><span>Resolution</span><select id="tr-res"><option value="">(none)</option>${S.data.resolutions.map((r) => `<option ${r === 'Done' ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>
-          ${i.type !== 'Epic' ? '<label class="field" style="flex:1 1 120px"><span>Time spent</span><input id="tr-time" type="text" placeholder="1h 30m"></label>' : ''}</div>
-        <label class="field"><span>Comment</span><textarea id="tr-comment" rows="2"></textarea></label>
+      ${p ? `<div class="tr-form"><strong>${esc(p.name)} → ${esc(p.to)}${p.resolution ? ` · ${esc(p.resolution)}` : ''}</strong>
+        ${p.resolution ? '' : `<div class="row"><label class="field" style="flex:1 1 160px"><span>Resolution</span><select id="tr-res"><option value="">(none)</option>${S.data.resolutions.map((r) => `<option ${r === 'Done' ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>
+          ${i.type !== 'Epic' ? '<label class="field" style="flex:1 1 120px"><span>Time spent</span><input id="tr-time" type="text" placeholder="1h 30m"></label>' : ''}</div>`}
+        <label class="field"><span>Comment${p.needsComment ? ' (required)' : ''}</span><textarea id="tr-comment" rows="2"></textarea></label>
         <div class="row"><button class="btn primary sm" data-do="confirmTransition">${esc(p.name)}</button><button class="btn sm" data-do="cancelTransition">Cancel</button></div></div>` : ''}
     </div>
     <div class="body">
@@ -525,6 +586,17 @@ const A = {
   open: (el) => { S.open = el.dataset.key; S.pending = null; S.editDesc = false; history.replaceState(null, '', '#issue=' + S.open); render(); },
   close: () => { S.open = null; S.pending = null; history.replaceState(null, '', location.pathname); render(); },
   boardType: (el) => { S.board.type = el.dataset.v; render(); },
+  decide: (el) => run(async () => {
+    const key = el.dataset.key;
+    const t = issue(key)?.transitions.find((x) => x.id === el.dataset.id);
+    if (!t) { toast(`${key} is already settled`, true); return; }
+    const comment = val('dec-' + key).trim();
+    // You settle it, whoever the dashboard acts as elsewhere.
+    await api('POST', `/issue/${key}/transition`, { id: t.id, comment: comment || undefined, as: S.data.me });
+    consume('dec-' + key);
+    toast(`${key}: ${OUTCOME[t.resolution] || t.name}`);
+  }),
+  openOnBoard: (el) => { S.tab = 'board'; store.set('tab', 'board'); A.open(el); },
   transition: (el) => run(async () => {
     const i = issue(S.open);
     const t = i.transitions.find((x) => x.id === el.dataset.id);
@@ -594,6 +666,8 @@ const CHANGE = {
   as: (el) => { S.as = el.value; store.set('as', S.as); render(); },
   epicFilter: (el) => { S.board.epic = el.value; render(); },
   boardDone: (el) => { S.board.done = el.checked; render(); },
+  boardDecisions: (el) => { S.board.decisions = el.checked; render(); },
+  decSource: (el) => { S.dec.source = el.value; render(); },
   logWrites: (el) => { S.log.writes = el.checked; render(); },
   logErrors: (el) => { S.log.errors = el.checked; render(); },
   rerender: () => render(),
@@ -631,12 +705,14 @@ document.addEventListener('input', (e) => {
   const k = e.target.dataset.input;
   if (k === 'boardQ') { S.board.q = e.target.value; render(); }
   if (k === 'logQ') { S.log.q = e.target.value; render(); }
+  // Without a re-render: Answer is enabled as soon as there is text.
+  if (k === 'decText') { const b = document.getElementById('need-' + e.target.dataset.key); if (b) { b.disabled = !e.target.value.trim(); } }
 });
 
 const fromHash = () => {
   const m = /issue=([\w-]+)/.exec(location.hash);
   if (m) { S.open = m[1]; S.tab = 'board'; }
-  const t = /tab=(board|requests|faults|settings)/.exec(location.hash);
+  const t = /tab=(decisions|board|requests|faults|settings)/.exec(location.hash);
   if (t) { S.tab = t[1]; }
 };
 window.addEventListener('hashchange', () => { fromHash(); render(); });
