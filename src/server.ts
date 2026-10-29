@@ -611,9 +611,10 @@ export class JiraSimulator {
     const p = url.pathname;
     const method = req.method ?? 'GET';
     if (p === '/' || p === '/index.html') {
-      const file = this.opts.dashboardFile ?? path.join(__dirname, '..', '..', 'media', 'simulator.html');
+      // Read before the headers go out: a missing page is then a 500, not a request left open.
+      const page = fs.readFileSync(this.opts.dashboardFile ?? path.join(__dirname, '..', 'media', 'simulator.html'));
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      res.end(fs.readFileSync(file));
+      res.end(page);
       return;
     }
     const browse = /^\/browse\/([\w-]+)$/.exec(p);
