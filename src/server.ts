@@ -1,10 +1,12 @@
 // Jira simulator: the subset of the Jira Cloud REST API v3 the DevFactory extension uses, on 127.0.0.1, with the seeded epic and task workflows,
-// Jira's validation and error formats, injectable faults, a request log and a dashboard to watch and change the state.
+// Jira's validation and error formats, injectable faults, a request log, a dashboard to watch and change the state, and
+// the agent guide at /llms.txt (agentGuide.ts): how an agent asks the user a decision.
 // No dependency on VS Code: it runs as its own process, started by `jira-sim` (the npm bin), `node out/cli.js` or docker compose.
 // The state is behind a SimStorage (storage.ts): a JSON file or memory by default, MongoDB or PostgreSQL from the CLI.
 import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
+import { agentGuide } from './agentGuide';
 import { adfToText, textToAdf } from './jiraFormat';
 import { compileJql, JqlError, parseJql } from './jql';
 import { DEFAULT_PROJECT, seedState, withSeedWorkflow } from './seed';
@@ -629,6 +631,13 @@ export class JiraSimulator {
     if (browse) {
       res.writeHead(302, { Location: `/#issue=${browse[1].toUpperCase()}` });
       res.end();
+      return;
+    }
+    if (p === '/llms.txt') {
+      // Written before the headers go out, so a storage that fails is a 500.
+      const guide = agentGuide({ url: this.url, project: (await this.context()).project.key });
+      res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(guide);
       return;
     }
     if (p === '/_sim/ping') { return send(res, ok(await this.ping())); }

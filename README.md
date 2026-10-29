@@ -48,7 +48,7 @@ The dashboard's changes show in the extension after **Refresh**, like edits by a
 
 `http://127.0.0.1:<port>/` — five tabs:
 
-- **Decisions**: what agents ask you, oldest first, by source, with Approve, Reject and Answer (one text box for a comment, a reason or the answer); then the settled ones with their outcome and your reply. The tab and the page title count what waits. You answer as the simulated you. See [Decisions](#decisions).
+- **Decisions**: what agents ask you, oldest first, by source (with an **Agent guide** link to `/llms.txt`), with Approve, Reject and Answer (one text box for a comment, a reason or the answer); then the settled ones with their outcome and your reply. The tab and the page title count what waits. You answer as the simulated you. See [Decisions](#decisions).
 - **Board**: the issues by status (decisions left out unless **Show decisions** is ticked), filters, and an issue panel to act as a teammate: transitions (with resolution and time spent), comments, work log, links, labels, assignee, description, history.
 - **Requests**: every REST call with its status, time, error and bodies.
 - **Faults**: token expired (401), no permission (403), rate limited (429), Jira down (503), dropped connection, slow Jira, refused create, transition, link or search; or a custom one.
@@ -61,6 +61,8 @@ What the extension calls, with Jira's checks and messages: enhanced JQL search (
 ## Decisions
 
 Agents of any source (the extension, Claude Code, a script, CI) can put a question to you as an issue of type **Decision**, and wait for your answer in the **Decisions** tab. It is plain Jira: a real Jira with a Decision type and the same transitions works the same way.
+
+**For an agent:** `http://127.0.0.1:<port>/llms.txt` is the whole contract in Markdown, with this simulator's URL and project key filled in: how to ask, wait, read the reply and withdraw, the transitions, curl commands and `jira-sim ask`. Tell an agent to read it and follow it; the Decisions tab links to it (**Agent guide**). No authentication.
 
 | Transition | id | From → to | Resolution | |
 |------------|----|-----------|------------|-|

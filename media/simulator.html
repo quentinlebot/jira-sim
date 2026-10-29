@@ -362,6 +362,7 @@ function decisions() {
       <select id="decSource" data-change="decSource" aria-label="Source"><option value="">All sources · ${count('')} waiting</option>${sources.map((s) => `<option value="${esc(s)}" ${s === src ? 'selected' : ''}>${esc(s)} · ${count(s)} waiting</option>`).join('')}</select>
       <span class="grow"></span>
       <span class="muted small">Agents ask with an issue of type Decision and a label agent:&lt;source&gt;; you answer as ${esc(userName(S.data.me))}.</span>
+      <a class="btn sm" href="/llms.txt" target="_blank" rel="noopener" title="How an agent asks you a decision: give it this URL">Agent guide</a>
     </div>
     <section class="block"><h2>Waiting · ${waiting.length}</h2><div class="list">${waiting.map(decisionCard).join('') || '<div class="box"><span class="muted">Nothing waits for you.</span></div>'}</div></section>
     <section class="block"><h2>Settled</h2><div class="list">${settled.map(settledCard).join('') || '<div class="box"><span class="muted">None yet.</span></div>'}</div></section>`;
